@@ -1,0 +1,284 @@
+load_file("nrngui.hoc")
+
+// Default Parameters
+
+rm = 42000              // ohm-cm2
+Cm_val = 1.25           // uF/cm2
+d = 18.8                // um
+
+gNaBar = 0.12
+gKBar  = 0.036
+
+ena_val = 50        //mV
+ek_val  = -77       //mV
+
+temp = 6.3
+celsius = temp
+
+stamp = 0.2            // nA
+
+// Save Default Values
+
+
+default_rm      = rm
+default_Cm      = Cm_val
+default_d       = d
+default_gNaBar  = gNaBar
+default_gKBar   = gKBar
+default_ena     = ena_val
+default_ek      = ek_val
+default_temp    = temp
+default_stamp   = stamp
+
+
+// Create Cell
+
+create soma
+access soma
+
+soma {
+    nseg = 1
+    diam = d
+    L = 18.8
+
+    Ra = 123
+    cm = Cm_val
+
+    
+
+    insert hh
+
+    gnabar_hh = gNaBar
+    gkbar_hh  = gKBar
+    gl_hh     = 1.0/rm
+    
+
+    ena = ena_val
+    ek  = ek_val
+}
+
+// Current Clamp
+
+
+objref stim
+
+soma stim = new IClamp(0.5)
+
+stim.del = 100
+stim.dur = 1000
+stim.amp = stamp
+
+tstop = 1300
+
+
+// Spike Counter
+
+
+objref apc
+
+soma apc = new APCount(0.5)
+apc.thresh = 0
+
+
+// Utility Functions
+
+
+proc spikk() {
+
+    printf("Temperature = %g C\n", celsius)
+    printf("Total spikes = %g\n", apc.n)
+    printf("Injected current = %g nA\n", stim.amp)
+    printf("Firing frequency = %g Hz\n", apc.n/(stim.dur/1000))
+    printf("\n")
+}
+
+
+// Update Functions
+
+proc update_clamp() {
+    stim.amp = stamp
+}
+
+proc update_gNaBar() {
+     soma gnabar_hh = gNaBar
+    
+}
+
+proc update_gKBar() {
+       soma gkbar_hh = gKBar
+    
+}
+
+proc update_Rm() {
+      soma gl_hh = 1.0/rm
+    
+}
+
+proc update_ena() {
+    soma ena = ena_val
+}
+
+proc update_ek() {
+    soma ek = ek_val
+}
+
+proc update_cm() {
+    soma cm = Cm_val
+}
+
+proc update_d() {
+    soma diam = d
+}
+
+proc update_temp() {
+    celsius = temp
+}
+
+
+// Reset Model
+
+proc reset_model() {
+
+    rm      = default_rm
+    Cm_val  = default_Cm
+    d       = default_d
+    gNaBar  = default_gNaBar
+    gKBar   = default_gKBar
+    ena_val = default_ena
+    ek_val  = default_ek
+    temp    = default_temp
+    stamp   = default_stamp
+
+    soma {
+
+    gnabar_hh = gNaBar
+    gkbar_hh  = gKBar
+
+    cm   = Cm_val
+    diam = d
+
+    gl_hh = 1.0/rm
+
+    ena = ena_val
+    ek  = ek_val
+
+    }
+
+    celsius = temp
+    stim.amp = stamp
+
+    printf("\nModel reset to default parameters.\n\n")
+}
+
+
+// F-I Curve
+
+
+proc FIcurve() { local i, amp
+
+    // Always start from the default model
+    
+
+    printf("Current(nA)\tFrequency(Hz)\n")
+
+    for i = 0,20 {
+
+        amp = i * 0.01
+        stim.amp = amp
+
+        finitialize(-65)
+        run()
+
+        printf("%g\t%g\n", amp, apc.n/(stim.dur/1000))
+    }
+
+    // Restore original clamp amplitude after sweep
+    stim.amp = stamp
+}
+
+
+//  Create a random number generator
+objref rng
+rng = new Random()
+
+
+// Base Model Values
+base_gNa = 0.09
+base_gK  = 0.042
+base_rm  = 57500
+base_cm  = 1.25
+base_diam= 18.5
+
+proc mpmoss() { local seed, del_gNa, del_gK, del_rm, del_cm, del_diam
+
+    for seed=0,99999{
+
+    rng.Random123(seed,1,1)
+
+    del_gNa = rng.uniform(-0.05,0.1)
+    del_gK  = rng.uniform(-0.01,0.01)
+    del_rm  = rng.uniform(-40000,40000)
+    del_cm  = rng.uniform(-0.5,0.5)
+    del_diam = rng.uniform(-10,10)
+
+    gNaBar = base_gNa + del_gNa
+    gKBar  = base_gK  + del_gK
+    rm     = base_rm  + del_rm
+    Cm_val = base_cm  + del_cm
+    d      = base_diam + del_diam
+
+    soma {
+        gnabar_hh = gNaBar
+        gkbar_hh  = gKBar
+        gl_hh     = 1/rm
+        cm        = Cm_val
+        diam      = d
+    }
+
+    finitialize(-65)
+    run()
+
+        // Check validity
+        if (apc.n >=12 && apc.n <=13 ) {
+
+            printf("\nVALID MODEL\n")
+    printf("Seed\tgNa\tgK\tRm\tCm\tDiam\tSpikes\n")
+    printf("%d\t%g\t%g\t%g\t%g\t%g\t%g\n",seed, gNaBar, gKBar, rm, Cm_val, d, apc.n)
+        }
+    }
+}
+
+// GUI
+
+xpanel("Parameters")
+
+xvalue("Clamp Amplitude (nA)", "stamp", 1, "update_clamp()", 1, 1)
+
+xvalue("gNaBar", "gNaBar", 1, "update_gNaBar()", 1, 1)
+xvalue("gKBar", "gKBar", 1, "update_gKBar()", 1, 1)
+
+xvalue("E_Na (mV)", "ena_val", 1, "update_ena()", 1, 1)
+xvalue("E_K (mV)", "ek_val", 1, "update_ek()", 1, 1)
+
+xvalue("Rm", "rm", 1, "update_Rm()", 1, 1)
+xvalue("Cm", "Cm_val", 1, "update_cm()", 1, 1)
+
+xvalue("Diameter", "d", 1, "update_d()", 1, 1)
+
+xvalue("Temperature (C)", "temp", 1, "update_temp()", 1, 1)
+
+xbutton("Spike Count", "spikk()")
+
+xbutton("F-I Curve", "FIcurve()")
+
+xbutton("Reset Model", "reset_model()")
+
+xbutton("Run MPMOSS", "mpmoss()")
+
+xpanel()
+
+// Standard NEURON Windows
+
+
+nrncontrolmenu()
+newPlotV() 
